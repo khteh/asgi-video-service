@@ -34,6 +34,60 @@ from src.config import settings
 config = Config()
 config.from_toml("/etc/hypercorn.toml")
 
+
+def _patch_quart_duplicate_h3_body_end() -> None:
+    """Work around an unresolved anycorn HTTP/3 bug: davidbrochart/anycorn#89
+    (https://github.com/davidbrochart/anycorn/issues/89), filed against this
+    exact project, no fix released yet.
+
+    anycorn's H3 protocol handler can dispatch a stream's "end of body"
+    event twice for one request - once from a HeadersReceived(stream_ended=
+    True) event, again from a following DataReceived(stream_ended=True)
+    event - with nothing to check whether the stream already ended. Quart's
+    ASGI receive-loop (handle_messages, in quart/asgi.py) takes that second,
+    spurious chunk and calls Body.put() on it, but the *first*, legitimate
+    end-of-body message already shut the body's asyncio.Queue down
+    (Body.set_complete() -> self._queue.shutdown()), so the second put()
+    raises asyncio.QueueShutDown. That's unhandled inside Quart's own
+    asyncio.TaskGroup in ASGIHTTPConnection.__call__, which crashes the
+    entire worker process, not just the one request - there is no src/
+    frame anywhere in the traceback, this is not an application bug.
+
+    A chunk that arrives after the body is already complete cannot be
+    delivered to the view anyway (nothing is still reading the queue), so
+    the only sane options are "crash the process" (today) or "drop it and
+    log it" (this patch). This does not touch anycorn - its h3.py is under
+    active upstream development (see the closed PRs around H3 framing on
+    that repo) and patching it locally would be fighting a moving target;
+    Body.put() is the one, stable choke point every transport (HTTP/1, H2,
+    H3) funnels through, so guarding it there covers all of them.
+
+    Remove this once anycorn#89 is fixed upstream and the fix is released.
+    """
+    from quart.wrappers.request import Body
+
+    original_put = Body.put
+
+    async def _put_tolerating_late_chunks(self: Body, data: bytes) -> None:
+        try:
+            await original_put(self, data)
+        except asyncio.queues.QueueShutDown:
+            logging.getLogger(__name__).warning(
+                "Dropped a request-body chunk (%d bytes) delivered after "
+                "the body was already complete - this is anycorn issuing a "
+                "duplicate end-of-stream event over HTTP/3 "
+                "(see https://github.com/davidbrochart/anycorn/issues/89), "
+                "not application data loss for the request that already "
+                "completed.",
+                len(data),
+            )
+
+    Body.put = _put_tolerating_late_chunks
+
+
+#_patch_quart_duplicate_h3_body_end()
+
+
 def _add_secure_headers(response: Response) -> Response:
     response.headers["Strict-Transport-Security"] = (
         "max-age=63072000; includeSubDomains; preload"
@@ -57,9 +111,24 @@ def create_app() -> Quart:
     app.config["JWT_SECRET_KEY"] = settings.JWT_SECRET_KEY
     app.after_request(_add_secure_headers)
     app = cors(app, allow_credentials=True, allow_origin="https://localhost")
-    app = cors(app, allow_credentials=True, allow_origin="https://localhost")
     # https://quart-wtf.readthedocs.io/en/stable/how_to_guides/configuration.html
     CSRFProtect(app)
+    # Disable CSRFProtect's automatic before_request check. That hook reads
+    # the request body itself (await request.form) to pull out the token,
+    # and src/web/routes.py's submit() view *also* reads request.form to get
+    # the query - two reads of the same ASGI body stream on every submit.
+    # Quart's Request.body is backed by an asyncio.Queue fed by the ASGI
+    # receive() loop; on Python 3.14 the queue gets shut down once the body
+    # is drained, and the second read then hits asyncio.QueueShutDown deep
+    # inside Quart's own asgi.py/wrappers/request.py (no application frames
+    # in the traceback - this isn't app-code misuse, it's the double read
+    # itself). Turning off the default check and validating the token
+    # manually, exactly once, inside the one view that needs it removes the
+    # second read entirely. It also means the JSON API (src/api/routes.py)
+    # is no longer subject to CSRF checks at all, which is correct - CSRF is
+    # a browser/cookie-session attack, and the API doesn't authenticate via
+    # cookies, so a separate csrf.exempt(api_bp) is unnecessary now too.
+    app.config["WTF_CSRF_CHECK_DEFAULT"] = False
 
     @app.errorhandler(CSRFError)
     async def handle_csrf_error(e):
