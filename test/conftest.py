@@ -13,11 +13,9 @@ from src.config import Settings
 from src.domain.errors import ProviderUnavailableError
 from src.domain.models import GenerationResult
 
-
 @pytest.fixture
 def settings(tmp_path):
     return Settings(output_dir=tmp_path / "output")
-
 
 class FakeProvider:
     name = "fake"

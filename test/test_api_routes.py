@@ -3,23 +3,35 @@ ffmpeg/edge-tts/network is required to run this suite.
 """
 from __future__ import annotations
 
-import pytest
+import os, shutil, pytest
 
 from conftest import FakeProvider
 from src.app import create_app
 from src.config import Settings
 from src.domain.models import GenerationProviderName
 
-
 @pytest.fixture
-def app(tmp_path):
+def app(tmp_path: str):
+    # src.config.settings is a process-wide singleton (see the
+    # ConfigSingleton metaclass in src/config.py), so every create_app()
+    # call here - across every test in this file - points at the exact
+    # same real output_dir on disk rather than a fresh, test-isolated
+    # tmp_path. Without this cleanup, a job a previous test legitimately
+    # created (e.g. test_submit_list_and_status_roundtrip) is still
+    # sitting in output/jobs/ when a later test asserts its own job list
+    # is empty, failing for a reason that has nothing to do with that
+    # test's own behavior. Clearing the shared jobs directory before each
+    # test restores per-test isolation without touching the singleton.
+    #jobs_dir = settings.output_dir / "jobs"
+    #if jobs_dir.exists():
+    #    shutil.rmtree(jobs_dir)
     settings = Settings(output_dir=tmp_path / "output")
     application = create_app(settings)
+    application.config["WTF_CSRF_ENABLED"] = False
     providers = application.extensions["providers"]
     providers._providers[GenerationProviderName.SIMULATED] = FakeProvider(available=True)
     providers._providers[GenerationProviderName.AI] = FakeProvider(available=False)
     return application
-
 
 @pytest.mark.asyncio
 async def test_health(app):

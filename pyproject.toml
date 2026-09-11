@@ -1,5 +1,5 @@
 [project]
-name = "stem-video-service"
+name = "asgi-video-service"
 version = "0.1.0"
 description = "Asynchronous service that generates short STEM explainer videos from a learner's question."
 readme = "README.md"

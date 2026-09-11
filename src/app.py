@@ -10,7 +10,7 @@ would need to change to, say, swap FileSystemJobStore for a database.
 """
 from __future__ import annotations
 
-import asyncio, json, logging
+import asyncio, json, logging, sys
 
 from quart import Quart, Response, request
 from quart_wtf.csrf import CSRFProtect, CSRFError
@@ -20,8 +20,8 @@ from quart import flash, request, json, Blueprint, session, render_template, ses
 from anycorn.config import Config
 from anycorn.middleware import HTTPToHTTPSRedirectMiddleware
 from datetime import date, datetime, timedelta, timezone
+from logging.handlers import TimedRotatingFileHandler
 from src.api.routes import api_bp
-from src.config import Settings
 from src.domain.models import GenerationProviderName
 from src.generation.registry import ProviderRegistry
 from src.jobs.service import JobService
@@ -30,7 +30,7 @@ from src.persistence.artifact_store import ArtifactStore
 from src.persistence.job_store import FileSystemJobStore
 from src.validation import build_validator
 from src.web.routes import web_bp
-from src.config import settings
+from src.config import Settings
 config = Config()
 config.from_toml("/etc/hypercorn.toml")
 
@@ -87,7 +87,6 @@ def _patch_quart_duplicate_h3_body_end() -> None:
 
 #_patch_quart_duplicate_h3_body_end()
 
-
 def _add_secure_headers(response: Response) -> Response:
     response.headers["Strict-Transport-Security"] = (
         "max-age=63072000; includeSubDomains; preload"
@@ -95,14 +94,15 @@ def _add_secure_headers(response: Response) -> Response:
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
-def create_app() -> Quart:
+def create_app(settings: Settings | None = None) -> Quart:
+    settings = settings or Settings.from_env()
     # static_folder=None: the app package itself has no top-level "static"
     # dir (view/static belongs to web_bp, see src/web/routes.py) - without
     # this, Quart still registers a default "/static/<path>" route for the
     # app, which would shadow the blueprint's own static route at the same
     # URL prefix and silently 404 every CSS/JS/image request.
     app = Quart(__name__, template_folder='view/templates', static_url_path='', static_folder='view/static')
-    app.config.from_file("/etc/stem-video-service_config.json", json.load)
+    app.config.from_file("/etc/asgi-video-service_config.json", json.load)
     app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # form/JSON bodies are tiny
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = timedelta(days=90)
     app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -177,6 +177,25 @@ def create_app() -> Quart:
     @app.after_serving
     async def _stop_worker() -> None:
         await worker.stop()
+
+    """
+    https://docs.python.org/3/library/logging.html
+    The level parameter now accepts a string representation of the level such as ‘INFO’ as an alternative to the integer constants such as INFO.
+    """
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    """
+    https://realpython.com/python-modulo-string-formatting/#fine-tune-your-output-with-conversion-flags
+    -	Justification of values that are shorter than the specified field width
+    The Hyphen-Minus Flag (-)
+    When a formatted value is shorter than the specified field width, it’s usually right-justified in the field. The hyphen-minus (-) flag causes the value to be left-justified in the specified field instead.
+    """
+    if settings.environment == "development":
+        logging.basicConfig(filename='/var/log/asgi-video-service/log', filemode='w', format='%(asctime)s %(levelname)-8s %(message)s', level=settings.LOGLEVEL, datefmt='%Y-%m-%d %H:%M:%S')
+    else:
+        logging.basicConfig(handlers=[
+            TimedRotatingFileHandler(filename='/var/log/asgi-video-service/log', when='d', interval=1, backupCount=3),
+            logging.StreamHandler(sys.stdout)
+        ], format='%(asctime)s %(levelname)-8s %(message)s', level=settings.LOGLEVEL, datefmt='%Y-%m-%d %H:%M:%S')
 
     return app
 
