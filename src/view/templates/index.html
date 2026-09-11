@@ -15,6 +15,7 @@
   {% endif %}
 
   <form method="post" action="{{ url_for('web.submit') }}" class="submit-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div>
       <label for="query">Your question</label>
       <textarea

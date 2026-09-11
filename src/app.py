@@ -68,7 +68,7 @@ def create_app() -> Quart:
         if "url" in session and session["url"]:
             return redirect(session["url"]), 440
         else:
-            return redirect(url_for("home.index")), 440
+            return redirect(url_for("web.index")), 440
 
     job_store = FileSystemJobStore(settings.output_dir)
     artifact_store = ArtifactStore(settings.output_dir)
