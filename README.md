@@ -1,4 +1,4 @@
-# STEM Explainer Video Service
+# STEM Explainer Video Service (ASGI)
 
 An asynchronous Quart service that turns a learner's STEM question into a
 short, narrated explainer video. Built so the _generation backend_ is a
@@ -75,7 +75,7 @@ GPU + driver; without one the service automatically falls back to software
 encoding (libx264) - it still works, just without hardware acceleration.
 
 ```bash
-uv sync
+uv sync --extra ai
 cp .env.example .env   # optional, defaults work out of the box
 uv run anycorn src.app:app --bind 0.0.0.0:8000
 ```
