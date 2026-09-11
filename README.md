@@ -6,6 +6,50 @@ plug-and-play boundary: a fully self-contained **simulated** provider ships
 by default (no API key, real slides + real narrated audio + real MP4), and
 a **real AI** provider is a clean adapter interface away.
 
+This project is generated using Claude desktop in multiple rounds of prompts.
+
+## Prompts
+
+```
+Create a Python service with an API endpoint where a client can request a STEM concept explanation video. STEM stands for Science, Technology, Engineering and Mathematics. The service must be designed and implemented using asynchronous video-generation flow. Here are the requirements for the application:
+
+1. Please use uv package manager.
+2. Use Python Quart ASGI framework.
+3. Use Python Anycorn ASGI web server.
+4. Clear service design which enables plug-and-play of both simulated generation and real AI/video-generation providers.
+5. src/ folder should contain the application source code.
+   - src/view/static contains the static resources of the web interface.
+     - src/view/static/css contains the CSS
+     - src/view/static/images contains the images. For example, favicon.png and logo.png.
+     - src/view/static/js contains the javascript code.
+   - src/view/templates contains the view templates used by the Quart framework.
+6. test/ folder should contain the tests.
+7. output/ folder should contain the outputs of the application. For example, the generated videos and the job statuses.
+8. a way for learners to submit their query of the topic they are interested in. Here are some examples of the questions that the application must be able to answer:
+   i. How does the pH scale work?
+  ii. Why do atoms form covalent bonds?
+ iii. What is the difference between ionic and covalent bonding?
+9. a way to list requested videos or jobs
+10. a visible status for each requested video or job
+11. a way to retrieve or open a completed video explanation artifact
+12. visual content and audio for the explanation, similar to how a normal short educational video would feel
+13. a clear backend boundary for job state, generation logic, persistence, and artifacts
+14. Limit video length to 90 seconds.
+15. Use 4K video resolution.
+16. Use 60 fps.
+17. Use Nvidia GPU for hardware acceleration.
+18. The voice of the video should be as authentic and real as possible as compared to monotonic synthetic voice.
+19. Scale the number of slides generated according to difficulty level.
+
+Failure cases which should NOT fallback to simulated generation but to return a proper error status and message to the user immediately without creating any job:
+1. Invalid query string even if the length is right. For example:
+   i.  ~!@#$
+  ii. 12345
+ iii. "     "
+2. Questions which do not make any semantic sense or not being relevant to STEM topic.
+3. No network or improper API key in "ai" generation mode.
+```
+
 ## Requirements coverage at a glance
 
 | #              | Requirement                                                         | Where                                                                                                                  |
