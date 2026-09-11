@@ -6,7 +6,7 @@ from __future__ import annotations
 import os, shutil, pytest
 
 from conftest import FakeProvider
-from src.app import create_app
+from src.main import create_app
 from src.config import Settings
 from src.domain.models import GenerationProviderName
 
