@@ -1,0 +1,45 @@
+[project]
+name = "stem-video-service"
+version = "0.1.0"
+description = "Asynchronous service that generates short STEM explainer videos from a learner's question."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "quart",
+    "anycorn[h3,asyncio]",
+    "edge-tts",
+    "pillow",
+    "httpx",
+    "python-dotenv",
+    "wordfreq",
+    "quart",
+    "Quart-CORS",
+    "quart-wtforms"
+]
+
+[project.optional-dependencies]
+# Real AI/high-realism generation providers (requirement: "plug-and-play
+# of both simulated generation and real AI/video-generation providers").
+# Base install stays lightweight and fully offline-capable; opt in with:
+#   uv sync --extra ai
+ai = [
+    "anthropic",   # AnthropicScriptProvider — real LLM-authored scripts
+    "edge-tts",     # EdgeTTSNarrator — natural cloud neural voice
+    "piper-tts",    # PiperNarrator — natural offline neural voice
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["test"]
+pythonpath = ["."]
+
+# This is an application, not a library: don't try to build/install it as an
+# importable package. `uv sync` just provisions a venv with the deps above.
+[tool.uv]
+package = false

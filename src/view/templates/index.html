@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}New STEM Explainer Video{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Turn any STEM question into a short explainer video</h1>
+  <p class="subtitle">
+    Ask a science, technology, engineering, or math question and get back a
+    narrated, illustrated explainer video.
+  </p>
+
+  {% if error_message %}
+  <div class="alert alert-error">
+    <strong>{{ error_code }}:</strong> {{ error_message }}
+  </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('web.submit') }}" class="submit-form">
+    <div>
+      <label for="query">Your question</label>
+      <textarea
+        id="query"
+        name="query"
+        rows="3"
+        placeholder="e.g. How does the pH scale work?"
+        required
+      >{{ submitted_query or "" }}</textarea>
+    </div>
+
+    <div class="form-row">
+      <div class="field">
+        <label for="difficulty">Difficulty</label>
+        <select id="difficulty" name="difficulty">
+          <option value="beginner">Beginner (fewer slides)</option>
+          <option value="intermediate" selected>Intermediate</option>
+          <option value="advanced">Advanced (more slides)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="provider">Generation mode</label>
+        <select id="provider" name="provider">
+          <option value="simulated" selected>Simulated (offline, free)</option>
+          <option value="ai">AI provider (real, requires API key)</option>
+        </select>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-primary">Generate video</button>
+  </form>
+
+  <section class="examples">
+    <h2>Or try one of these</h2>
+    <ul class="example-list">
+      <li>
+        <button type="button" class="example-btn" data-query="How does the pH scale work?">
+          How does the pH scale work?
+        </button>
+      </li>
+      <li>
+        <button type="button" class="example-btn" data-query="Why do atoms form covalent bonds?">
+          Why do atoms form covalent bonds?
+        </button>
+      </li>
+      <li>
+        <button type="button" class="example-btn" data-query="What is the difference between ionic and covalent bonding?">
+          What is the difference between ionic and covalent bonding?
+        </button>
+      </li>
+    </ul>
+  </section>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('web.static', filename='js/app.js') }}"></script>
+{% endblock %}

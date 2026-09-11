@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}My Videos{% endblock %}
+{% block content %}
+<section>
+  <h1>Requested videos</h1>
+
+  {% if not jobs %}
+  <p class="empty-state">
+    No videos requested yet. <a href="{{ url_for('web.index') }}">Ask a question</a> to get started.
+  </p>
+  {% else %}
+  <table class="jobs-table">
+    <thead>
+      <tr>
+        <th>Question</th>
+        <th>Status</th>
+        <th>Difficulty</th>
+        <th>Requested</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for job in jobs %}
+      <tr>
+        <td>{{ job.query }}</td>
+        <td><span class="status-badge status-{{ job.status.value }}">{{ job.status.value }}</span></td>
+        <td>{{ job.difficulty.value }}</td>
+        <td>{{ job.created_at }}</td>
+        <td><a href="{{ url_for('web.job_detail', job_id=job.id) }}">View</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}
