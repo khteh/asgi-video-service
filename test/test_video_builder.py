@@ -55,4 +55,4 @@ async def test_assemble_video_never_exceeds_the_hard_cap(tmp_path):
 
 
 def test_detect_nvenc_off_mode_is_always_false():
-    assert detect_nvenc("off") is False
+    assert detect_nvenc("off", 3840, 2160) is False

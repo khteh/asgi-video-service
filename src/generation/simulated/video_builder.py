@@ -49,10 +49,16 @@ async def probe_duration(path: Path) -> float:
     return float(data["format"]["duration"])
 
 
-def detect_nvenc(nvenc_mode: str) -> bool:
+def detect_nvenc(nvenc_mode: str, width: int, height: int) -> bool:
     """Probe whether ffmpeg can *actually* encode with h264_nvenc right
     now - not just whether the encoder is compiled in. A build with NVENC
     support but no NVIDIA GPU/driver attached must fall back cleanly.
+
+    Probes at the caller's real target resolution (settings.video_width/
+    video_height), not a fixed placeholder size - NVENC capability can
+    depend on resolution (e.g. GPU memory, or hardware encode limits at
+    4K), so a probe at some other, smaller size wouldn't reliably predict
+    whether the real encode in assemble_video() will succeed.
     """
     if nvenc_mode == "off":
         return False
@@ -76,7 +82,7 @@ def detect_nvenc(nvenc_mode: str) -> bool:
         probe = subprocess.run(
             [
                 "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-f", "lavfi", "-i", "color=c=black:s=64x64:d=0.1",
+                "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:d=0.1",
                 "-frames:v", "1", "-c:v", "h264_nvenc", "-f", "null", "-",
             ],
             capture_output=True, text=True, timeout=15,
@@ -171,7 +177,7 @@ async def assemble_video(
         durations = [d * trim_scale for d in durations]
         total = sum(durations)
 
-    use_nvenc = detect_nvenc(nvenc_mode)
+    use_nvenc = detect_nvenc(nvenc_mode, width, height)
     encoder = "h264_nvenc" if use_nvenc else "libx264"
     atempo = _atempo_chain(speed_factor)
 
