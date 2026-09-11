@@ -179,6 +179,7 @@ async def assemble_video(
 
     use_nvenc = detect_nvenc(nvenc_mode, width, height)
     encoder = "h264_nvenc" if use_nvenc else "libx264"
+    logging.info(f"Using encoder {encoder} (NVENC mode {nvenc_mode}, detected NVENC usable: {use_nvenc})")
     atempo = _atempo_chain(speed_factor)
 
     workdir = output_path.parent
