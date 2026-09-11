@@ -111,3 +111,22 @@ class Settings:
             ),
             worker_concurrency=_int("WORKER_CONCURRENCY", 3),
         )
+    """
+    https://docs.python.org/3/library/logging.html
+    The level parameter now accepts a string representation of the level such as ‘INFO’ as an alternative to the integer constants such as INFO.
+    """
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    """
+    https://realpython.com/python-modulo-string-formatting/#fine-tune-your-output-with-conversion-flags
+    -	Justification of values that are shorter than the specified field width
+    The Hyphen-Minus Flag (-)
+    When a formatted value is shorter than the specified field width, it’s usually right-justified in the field. The hyphen-minus (-) flag causes the value to be left-justified in the specified field instead.
+    """
+    if environment == "development":
+        logging.basicConfig(filename='/var/log/asgi-video-service/log', filemode='w', format='%(asctime)s %(levelname)-8s %(message)s', level=LOGLEVEL, datefmt='%Y-%m-%d %H:%M:%S')
+    else:
+        logging.basicConfig(handlers=[
+            TimedRotatingFileHandler(filename='/var/log/asgi-video-service/log', when='d', interval=1, backupCount=3),
+            logging.StreamHandler(sys.stdout)
+        ], format='%(asctime)s %(levelname)-8s %(message)s', level=LOGLEVEL, datefmt='%Y-%m-%d %H:%M:%S')
+    

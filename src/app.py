@@ -20,7 +20,6 @@ from quart import flash, request, json, Blueprint, session, render_template, ses
 from anycorn.config import Config
 from anycorn.middleware import HTTPToHTTPSRedirectMiddleware
 from datetime import date, datetime, timedelta, timezone
-from logging.handlers import TimedRotatingFileHandler
 from src.api.routes import api_bp
 from src.domain.models import GenerationProviderName
 from src.generation.registry import ProviderRegistry
@@ -177,25 +176,6 @@ def create_app(settings: Settings | None = None) -> Quart:
     @app.after_serving
     async def _stop_worker() -> None:
         await worker.stop()
-
-    """
-    https://docs.python.org/3/library/logging.html
-    The level parameter now accepts a string representation of the level such as ‘INFO’ as an alternative to the integer constants such as INFO.
-    """
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    """
-    https://realpython.com/python-modulo-string-formatting/#fine-tune-your-output-with-conversion-flags
-    -	Justification of values that are shorter than the specified field width
-    The Hyphen-Minus Flag (-)
-    When a formatted value is shorter than the specified field width, it’s usually right-justified in the field. The hyphen-minus (-) flag causes the value to be left-justified in the specified field instead.
-    """
-    if settings.environment == "development":
-        logging.basicConfig(filename='/var/log/asgi-video-service/log', filemode='w', format='%(asctime)s %(levelname)-8s %(message)s', level=settings.LOGLEVEL, datefmt='%Y-%m-%d %H:%M:%S')
-    else:
-        logging.basicConfig(handlers=[
-            TimedRotatingFileHandler(filename='/var/log/asgi-video-service/log', when='d', interval=1, backupCount=3),
-            logging.StreamHandler(sys.stdout)
-        ], format='%(asctime)s %(levelname)-8s %(message)s', level=settings.LOGLEVEL, datefmt='%Y-%m-%d %H:%M:%S')
 
     return app
 

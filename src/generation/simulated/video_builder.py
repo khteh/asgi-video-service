@@ -211,7 +211,14 @@ async def assemble_video(
             "-c", "copy",
             str(output_path),
         ]
-        await _run_ffmpeg(final_cmd, cwd=workdir)
+        # No cwd= override here, matching every other ffmpeg/ffprobe call in
+        # this module: concat_list and output_path are already full paths
+        # relative to the app's actual working directory (they include the
+        # workdir prefix). Passing cwd=workdir on top of that made ffmpeg
+        # look for the workdir-prefixed path *again* relative to its own
+        # (already-workdir) cwd - i.e. a nonexistent, doubly-nested path -
+        # which is exactly the "No such file or directory" this fixes.
+        await _run_ffmpeg(final_cmd)
         final_duration = await probe_duration(output_path)
         if final_duration > max_seconds + 0.25:
             logger.warning(
