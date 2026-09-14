@@ -26,7 +26,11 @@
         <td><span class="status-badge status-{{ job.status.value }}">{{ job.status.value }}</span></td>
         <td>{{ job.difficulty.value }}</td>
         <td>{{ job.created_at }}</td>
-        <td><a href="{{ url_for('web.job_detail', job_id=job.id) }}">View</a></td>
+        <td>
+          <a href="{{ url_for('web.job_detail', job_id=job.id) }}">
+            {{ "▶ Play" if job.status.value == "completed" else "View" }}
+          </a>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

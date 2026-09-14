@@ -129,6 +129,14 @@ def create_app(settings: Settings | None = None) -> Quart:
     # cookies, so a separate csrf.exempt(api_bp) is unnecessary now too.
     app.config["WTF_CSRF_CHECK_DEFAULT"] = False
 
+    @app.context_processor
+    async def inject_current_year() -> dict:
+        # Powers the "(c) <year> Teh Kok How" line in base.html's footer -
+        # computed server-side (not in JS) so it's correct on every page,
+        # including ones that don't load app.js (job_not_found.html,
+        # jobs.html), and never goes stale between a page load and midnight.
+        return {"current_year": datetime.now(timezone.utc).year}
+
     @app.errorhandler(CSRFError)
     async def handle_csrf_error(e):
         logging.exception(f"handle_csrf_error {e.description}")

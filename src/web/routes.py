@@ -23,7 +23,9 @@ web_bp = Blueprint(
 
 @web_bp.get("/")
 async def index():
-    return await render_template("index.html")
+    job_service = current_app.extensions["job_service"]
+    recent_jobs = (await job_service.list_jobs())[:5]
+    return await render_template("index.html", recent_jobs=recent_jobs)
 
 
 @web_bp.post("/submit")
@@ -37,11 +39,13 @@ async def submit():
     try:
         job = await job_service.submit(query, difficulty=difficulty, provider=provider)
     except ServiceError as exc:
+        recent_jobs = (await job_service.list_jobs())[:5]
         rendered = await render_template(
             "index.html",
             error_message=exc.message,
             error_code=exc.code,
             submitted_query=query,
+            recent_jobs=recent_jobs,
         )
         return rendered, exc.http_status
     return redirect(url_for("web.job_detail", job_id=job.id))

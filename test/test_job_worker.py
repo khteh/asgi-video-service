@@ -166,8 +166,52 @@ async def test_process_increments_attempt_count_on_success(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_process_increments_attempt_count_on_service_error(tmp_path):
-    worker, job_store, _queue = _make_worker(tmp_path, provider=_FailingProvider())
+async def test_process_retries_service_error_when_attempts_remain(tmp_path):
+    # With budget left (2 < max_attempts=3), a failed attempt must NOT be a
+    # terminal failure: the job goes back to GENERATING/"retrying" - not
+    # FAILED - with no error detail recorded, and is re-queued for another
+    # try. This is what keeps the interim failure invisible to the API/UI
+    # and keeps new-job submission blocked while a retry is still pending.
+    worker, job_store, queue = _make_worker(tmp_path, provider=_FailingProvider(), max_attempts=3)
+    job = _make_job(status=JobStatus.PENDING, attempt_count=1)
+    await job_store.save(job)
+
+    await worker._process(job.id)
+
+    stored = await job_store.get(job.id)
+    assert stored.attempt_count == 2
+    assert stored.status == JobStatus.GENERATING
+    assert stored.stage == "retrying"
+    assert stored.error_message is None
+    assert stored.error_code is None
+    assert queue.qsize() == 1
+    assert queue.get_nowait() == job.id
+
+
+@pytest.mark.asyncio
+async def test_process_retries_unexpected_exception_when_attempts_remain(tmp_path):
+    worker, job_store, queue = _make_worker(tmp_path, provider=_CrashingProvider(), max_attempts=3)
+    job = _make_job(status=JobStatus.PENDING, attempt_count=0)
+    await job_store.save(job)
+
+    await worker._process(job.id)
+
+    stored = await job_store.get(job.id)
+    assert stored.attempt_count == 1
+    assert stored.status == JobStatus.GENERATING
+    assert stored.stage == "retrying"
+    assert stored.error_message is None
+    assert stored.error_code is None
+    assert queue.qsize() == 1
+    assert queue.get_nowait() == job.id
+
+
+@pytest.mark.asyncio
+async def test_process_fails_with_generic_message_once_attempts_exhausted_service_error(tmp_path):
+    # Once attempt_count reaches max_attempts, the failure finally becomes
+    # terminal - but the message shown to the user must be generic; none of
+    # the provider's internal failure detail is allowed to leak out.
+    worker, job_store, queue = _make_worker(tmp_path, provider=_FailingProvider(), max_attempts=2)
     job = _make_job(status=JobStatus.PENDING, attempt_count=1)
     await job_store.save(job)
 
@@ -176,12 +220,15 @@ async def test_process_increments_attempt_count_on_service_error(tmp_path):
     stored = await job_store.get(job.id)
     assert stored.attempt_count == 2
     assert stored.status == JobStatus.FAILED
-    assert stored.error_code == "test_failure"
+    assert stored.error_code == "max_retries_exceeded"
+    assert "synthetic failure" not in stored.error_message
+    assert "test_failure" not in stored.error_message
+    assert queue.qsize() == 0
 
 
 @pytest.mark.asyncio
-async def test_process_increments_attempt_count_on_unexpected_exception(tmp_path):
-    worker, job_store, _queue = _make_worker(tmp_path, provider=_CrashingProvider())
+async def test_process_fails_with_generic_message_once_attempts_exhausted_unexpected_exception(tmp_path):
+    worker, job_store, queue = _make_worker(tmp_path, provider=_CrashingProvider(), max_attempts=1)
     job = _make_job(status=JobStatus.PENDING, attempt_count=0)
     await job_store.save(job)
 
@@ -190,6 +237,9 @@ async def test_process_increments_attempt_count_on_unexpected_exception(tmp_path
     stored = await job_store.get(job.id)
     assert stored.attempt_count == 1
     assert stored.status == JobStatus.FAILED
+    assert stored.error_code == "max_retries_exceeded"
+    assert "unexpected crash" not in stored.error_message
+    assert queue.qsize() == 0
 
 
 @pytest.mark.asyncio

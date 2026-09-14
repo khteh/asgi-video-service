@@ -14,7 +14,25 @@
   </div>
   {% endif %}
 
-  <form method="post" action="{{ url_for('web.submit') }}" class="submit-form">
+  <!--
+    current-job-panel is hidden by default and only shown by app.js when a
+    browser-local "current job" (tracked via localStorage, set on the job
+    detail page) is still pending/generating - this is what keeps a new
+    submission blocked while one is already in flight, and it disappears
+    automatically once that job reaches a terminal state (completed, or
+    genuinely failed after exhausting all retries).
+  -->
+  <div id="current-job-panel" class="status-panel" hidden>
+    <p class="meta">Your video is on its way&hellip;</p>
+    <span class="status-badge" id="current-job-badge"></span>
+    <div class="progress-bar">
+      <div class="progress-fill" id="current-job-progress-fill" style="width: 0%;"></div>
+    </div>
+    <p id="current-job-stage"></p>
+    <p><a id="current-job-link" class="btn-primary" href="#">View progress</a></p>
+  </div>
+
+  <form id="submit-form" method="post" action="{{ url_for('web.submit') }}" class="submit-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div>
       <label for="query">Your question</label>
@@ -48,7 +66,7 @@
     <button type="submit" class="btn-primary">Generate video</button>
   </form>
 
-  <section class="examples">
+  <section class="examples" id="examples-section">
     <h2>Or try one of these</h2>
     <ul class="example-list">
       <li>
@@ -68,6 +86,35 @@
       </li>
     </ul>
   </section>
+
+  {% if recent_jobs %}
+  <section class="examples">
+    <h2>Recent videos</h2>
+    <table class="jobs-table">
+      <thead>
+        <tr>
+          <th>Question</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in recent_jobs %}
+        <tr>
+          <td>{{ job.query }}</td>
+          <td><span class="status-badge status-{{ job.status.value }}">{{ job.status.value }}</span></td>
+          <td>
+            <a href="{{ url_for('web.job_detail', job_id=job.id) }}">
+              {{ "▶ Play" if job.status.value == "completed" else "View" }}
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p><a href="{{ url_for('web.jobs_list') }}">See all videos &rarr;</a></p>
+  </section>
+  {% endif %}
 </section>
 {% endblock %}
 {% block scripts %}

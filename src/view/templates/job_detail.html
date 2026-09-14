@@ -14,9 +14,17 @@
   </div>
 
   {% if job.status.value == "failed" %}
+  <!--
+    Deliberately generic: this must never surface internal failure detail
+    (provider errors, retry/attempt counts, process crashes, etc.) to the
+    learner - job.error_message is itself already sanitized to a generic
+    string once all retries are exhausted, but the template doesn't rely on
+    that alone and renders fixed copy here regardless.
+  -->
   <div class="alert alert-error">
-    <strong>{{ job.error_code }}:</strong> {{ job.error_message }}
+    <p>We weren&rsquo;t able to generate this video. Please try asking your question again.</p>
   </div>
+  <p><a class="btn-primary" href="{{ url_for('web.index') }}">Ask a new question</a></p>
   {% endif %}
 
   <div id="video-container">

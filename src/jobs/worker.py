@@ -12,12 +12,21 @@ import asyncio
 import logging
 
 from src.domain.errors import ServiceError
-from src.domain.models import JobStatus
+from src.domain.models import Job, JobStatus
 from src.generation.registry import ProviderRegistry
 from src.persistence.artifact_store import ArtifactStore
 from src.persistence.job_store import JobRepository
 
 logger = logging.getLogger(__name__)
+
+# Shown to the user for any terminal (attempts-exhausted) job failure,
+# regardless of what actually went wrong internally (a provider error, an
+# unexpected exception, or the process itself dying mid-attempt) - the UI
+# must never disclose internals of how the service works.
+_GENERIC_FAILURE_MESSAGE = (
+    "This video could not be generated after multiple attempts. "
+    "Please try submitting your question again."
+)
 
 
 class JobWorker:
@@ -59,15 +68,11 @@ class JobWorker:
             if job.status not in (JobStatus.PENDING, JobStatus.GENERATING):
                 continue
             if job.attempt_count >= self.max_attempts:
-                job.mark_failed(
-                    f"Gave up after {job.attempt_count} attempt(s) - the "
-                    "process exited before this job finished each time.",
-                    code="max_retries_exceeded",
-                )
+                job.mark_failed(_GENERIC_FAILURE_MESSAGE, code="max_retries_exceeded")
                 await self.job_store.save(job)
                 logger.warning(
-                    "Job %s exceeded max_attempts (%d); marking failed "
-                    "instead of retrying again.",
+                    "Job %s exceeded max_attempts (%d) across process "
+                    "restarts; marking failed instead of retrying again.",
                     job.id, self.max_attempts,
                 )
                 continue
@@ -134,16 +139,47 @@ class JobWorker:
                 on_progress=on_progress,
             )
         except ServiceError as exc:
-            job.mark_failed(exc.message, code=exc.code)
-            await self.job_store.save(job)
-            logger.warning("Job %s failed: %s", job.id, exc.message)
+            await self._handle_attempt_failure(job, exc.message, exc_info=False)
             return
         except Exception as exc:  # noqa: BLE001 - normalize unexpected errors
-            job.mark_failed(f"Unexpected error during generation: {exc}")
-            await self.job_store.save(job)
-            logger.exception("Job %s failed unexpectedly", job.id)
+            await self._handle_attempt_failure(
+                job, f"Unexpected error during generation: {exc}", exc_info=True,
+            )
             return
 
         job.mark_completed(result)
         await self.job_store.save(job)
         logger.info("Job %s completed in %.1fs", job.id, result.duration_seconds)
+
+    async def _handle_attempt_failure(
+        self, job: Job, message: str, *, exc_info: bool = False,
+    ) -> None:
+        """Handle a single failed attempt at generating ``job``.
+
+        If attempts remain under self.max_attempts, this is NOT a terminal
+        failure: the job is put back on the queue for another try, and its
+        externally-visible state is left at GENERATING (stage "retrying") so
+        nothing about the interim failure is ever exposed via the API or UI -
+        submitting new jobs stays blocked (the job is still "in progress")
+        and no partial error detail leaks out. Only once attempt_count has
+        reached max_attempts is the job actually marked FAILED, at which
+        point the message shown to the user is a generic, non-leaky one
+        regardless of what internally went wrong.
+        """
+        log = logger.exception if exc_info else logger.warning
+        if job.attempt_count < self.max_attempts:
+            log(
+                "Job %s attempt %d/%d failed (%s); retrying.",
+                job.id, job.attempt_count, self.max_attempts, message,
+            )
+            job.mark_generating("retrying", 0.0)
+            await self.job_store.save(job)
+            await self.queue.put(job.id)
+            return
+
+        log(
+            "Job %s exhausted all %d attempt(s); giving up. Last error: %s",
+            job.id, self.max_attempts, message,
+        )
+        job.mark_failed(_GENERIC_FAILURE_MESSAGE, code="max_retries_exceeded")
+        await self.job_store.save(job)

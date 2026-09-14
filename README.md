@@ -131,7 +131,17 @@ Then open http://localhost:8000.
 
 ## STEM Query Interface:
 
-![STEM Query](images/asgi-video-service.png?raw=true "STEM Query")
+### New Request
+
+![New Request](images/asgi-video-service-new.png?raw=true "New Request")
+
+### Successful Video Generation
+
+![Successful Generation](images/asgi-video-service-generated.png?raw=true "Successful Generation")
+
+### List of Generated Videos
+
+![Video List](images/asgi-video-service-list.png?raw=true "Video List")
 
 ## Testing
 
