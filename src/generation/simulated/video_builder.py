@@ -30,7 +30,19 @@ class SlideClip:
     min_duration: float = 1.75
 
 
-async def probe_duration(path: Path) -> float:
+async def _kill(proc: "asyncio.subprocess.Process") -> None:
+    """Best-effort termination of a subprocess after its timeout fires. The
+    process may already have exited in the gap between the timeout firing
+    and this running, so ProcessLookupError here is an expected race, not a
+    problem worth surfacing."""
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        return
+    await proc.wait()
+
+
+async def probe_duration(path: Path, *, timeout: float) -> float:
     proc = await asyncio.create_subprocess_exec(
         "ffprobe",
         "-v", "error",
@@ -40,7 +52,13 @@ async def probe_duration(path: Path) -> float:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate()
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        await _kill(proc)
+        raise GenerationFailedError(
+            f"ffprobe timed out after {timeout:.0f}s probing {path}."
+        )
     if proc.returncode != 0:
         raise GenerationFailedError(
             f"ffprobe failed for {path}: {stderr.decode(errors='ignore')[-500:]}"
@@ -116,14 +134,23 @@ def _encoder_quality_args(encoder: str) -> list[str]:
     return ["-preset", "medium", "-crf", "18"]
 
 
-async def _run_ffmpeg(cmd: list[str], cwd: Optional[Path] = None) -> None:
+async def _run_ffmpeg(cmd: list[str], *, timeout: float, cwd: Optional[Path] = None) -> None:
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=str(cwd) if cwd else None,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate()
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        # Without this, a wedged ffmpeg process (stalled encoder, hung I/O)
+        # blocks whichever worker slot is processing this job forever
+        # instead of failing just this one job.
+        await _kill(proc)
+        raise GenerationFailedError(
+            f"ffmpeg command timed out after {timeout:.0f}s: {' '.join(cmd)}"
+        )
     if proc.returncode != 0:
         raise GenerationFailedError(
             f"ffmpeg command failed: {' '.join(cmd)}\n"
@@ -140,8 +167,18 @@ async def assemble_video(
     fps: int,
     max_seconds: float,
     nvenc_mode: str = "auto",
+    ffmpeg_timeout_seconds: float = 120.0,
+    ffprobe_timeout_seconds: float = 30.0,
 ) -> tuple[float, str]:
     """Builds the final MP4 at `output_path`.
+
+    ffmpeg_timeout_seconds/ffprobe_timeout_seconds bound every individual
+    ffmpeg/ffprobe subprocess call this function makes (each per-slide
+    encode, the final concat, each duration probe) - see _run_ffmpeg and
+    probe_duration above for why that matters. Defaults here match
+    Settings' defaults so direct callers (tests) don't have to pass them;
+    the simulated provider passes settings.ffmpeg_timeout_seconds/
+    settings.ffprobe_timeout_seconds explicitly so they're configurable.
 
     Returns (final_duration_seconds, hardware_acceleration_label).
     """
@@ -156,7 +193,8 @@ async def assemble_video(
     effective_cap = max(1.0, max_seconds - safety_margin)
 
     raw_durations = [
-        max(s.min_duration, await probe_duration(s.audio_path)) for s in slides
+        max(s.min_duration, await probe_duration(s.audio_path, timeout=ffprobe_timeout_seconds))
+        for s in slides
     ]
     raw_total = sum(raw_durations)
 
@@ -184,6 +222,14 @@ async def assemble_video(
 
     workdir = output_path.parent
     workdir.mkdir(parents=True, exist_ok=True)
+    # workdir is output/videos/ - shared by every concurrent job, not a
+    # per-job directory (the final output_path itself is a flat
+    # <job_id>.mp4 directly under it) - so these intermediate per-clip
+    # files must be namespaced per job to avoid two jobs assembling at the
+    # same time from clobbering each other's _clip_NN.mp4/_concat.txt.
+    # output_path.stem is the job id, and is already unique, so it doubles
+    # as that namespace.
+    stem = output_path.stem
     video_filter = (
         f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}"
@@ -192,7 +238,7 @@ async def assemble_video(
     clip_paths: list[Path] = []
     try:
         for i, (slide, duration) in enumerate(zip(slides, durations)):
-            clip_path = workdir / f"_clip_{i:02d}.mp4"
+            clip_path = workdir / f"_{stem}_clip_{i:02d}.mp4"
             cmd = [
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-loop", "1", "-i", str(slide.image_path),
@@ -207,10 +253,10 @@ async def assemble_video(
                 "-shortest",
                 str(clip_path),
             ]
-            await _run_ffmpeg(cmd)
+            await _run_ffmpeg(cmd, timeout=ffmpeg_timeout_seconds)
             clip_paths.append(clip_path)
 
-        concat_list = workdir / "_concat.txt"
+        concat_list = workdir / f"_{stem}_concat.txt"
         concat_list.write_text("\n".join(f"file '{p.name}'" for p in clip_paths))
         final_cmd = [
             "ffmpeg", "-y", "-loglevel", "error",
@@ -225,8 +271,8 @@ async def assemble_video(
         # look for the workdir-prefixed path *again* relative to its own
         # (already-workdir) cwd - i.e. a nonexistent, doubly-nested path -
         # which is exactly the "No such file or directory" this fixes.
-        await _run_ffmpeg(final_cmd)
-        final_duration = await probe_duration(output_path)
+        await _run_ffmpeg(final_cmd, timeout=ffmpeg_timeout_seconds)
+        final_duration = await probe_duration(output_path, timeout=ffprobe_timeout_seconds)
         if final_duration > max_seconds + 0.25:
             logger.warning(
                 "Assembled video duration %.2fs exceeds the %.0fs cap after "
@@ -237,6 +283,6 @@ async def assemble_video(
     finally:
         for p in clip_paths:
             p.unlink(missing_ok=True)
-        (workdir / "_concat.txt").unlink(missing_ok=True)
+        (workdir / f"_{stem}_concat.txt").unlink(missing_ok=True)
 
     return final_duration, ("nvenc" if use_nvenc else "cpu")

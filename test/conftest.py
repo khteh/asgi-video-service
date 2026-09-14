@@ -50,7 +50,6 @@ class FakeProvider:
             hardware_acceleration="cpu",
         )
 
-
 @pytest.fixture
 def fake_provider():
     return FakeProvider(available=True)

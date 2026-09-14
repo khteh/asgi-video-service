@@ -12,6 +12,7 @@ import asyncio
 import logging
 
 from src.domain.errors import ServiceError
+from src.domain.models import JobStatus
 from src.generation.registry import ProviderRegistry
 from src.persistence.artifact_store import ArtifactStore
 from src.persistence.job_store import JobRepository
@@ -28,13 +29,54 @@ class JobWorker:
         artifact_store: ArtifactStore,
         providers: ProviderRegistry,
         concurrency: int = 2,
+        max_attempts: int = 3,
     ) -> None:
         self.queue = queue
         self.job_store = job_store
         self.artifact_store = artifact_store
         self.providers = providers
         self.concurrency = max(1, concurrency)
+        self.max_attempts = max(1, max_attempts)
         self._tasks: list[asyncio.Task] = []
+
+    async def recover_orphaned_jobs(self) -> None:
+        """Re-enqueue jobs left PENDING or GENERATING by a previous process
+        that exited - crash, restart, redeploy - before a worker finished
+        them. The queue that normally hands a job to a worker lives only in
+        this process's memory, so a job that was merely mid-flight when the
+        old process died has no other record that it still needs work; left
+        alone it would sit at its last-persisted status forever. Call this
+        once, before worker.start(), from create_app()'s before_serving hook.
+
+        A job that has already used up self.max_attempts real attempts
+        (Job.attempt_count, incremented once per attempt in _process below)
+        is not retried again - it's marked FAILED instead, so a job that
+        reliably crashes the process on every attempt fails loudly after a
+        bounded number of tries rather than looping forever across restarts.
+        """
+        jobs = await self.job_store.list_all()
+        for job in jobs:
+            if job.status not in (JobStatus.PENDING, JobStatus.GENERATING):
+                continue
+            if job.attempt_count >= self.max_attempts:
+                job.mark_failed(
+                    f"Gave up after {job.attempt_count} attempt(s) - the "
+                    "process exited before this job finished each time.",
+                    code="max_retries_exceeded",
+                )
+                await self.job_store.save(job)
+                logger.warning(
+                    "Job %s exceeded max_attempts (%d); marking failed "
+                    "instead of retrying again.",
+                    job.id, self.max_attempts,
+                )
+                continue
+            logger.info(
+                "Recovering orphaned job %s (status=%s, attempt %d/%d) left "
+                "over from a previous run.",
+                job.id, job.status.value, job.attempt_count, self.max_attempts,
+            )
+            await self.queue.put(job.id)
 
     def start(self) -> None:
         if self._tasks:
@@ -74,6 +116,11 @@ class JobWorker:
             job.mark_generating(stage, progress)
             await self.job_store.save(job)
 
+        # Persisted before generate() runs (not after) so it's durable even
+        # if this attempt crashes the process outright - recover_orphaned_
+        # jobs above needs an accurate count of attempts already spent,
+        # including ones that never got the chance to reach mark_failed.
+        job.attempt_count += 1
         job.mark_generating("starting", 0.0)
         await self.job_store.save(job)
 

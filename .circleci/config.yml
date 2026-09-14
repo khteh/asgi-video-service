@@ -66,7 +66,11 @@ jobs:
               "TTS_VOICE": "en-US-AriaNeural",
               "AI_VIDEO_TIMEOUT_SECONDS": 10,
               "LLM_VALIDATION_MODEL": "claude-3-5-haiku-latest",
-              "WORKER_CONCURRENCY": 10
+              "WORKER_CONCURRENCY": 10,
+              "MAX_JOB_ATTEMPTS": 3,
+              "FFMPEG_TIMEOUT_SECONDS": 120.0,
+              "FFPROBE_TIMEOUT_SECONDS": 30,
+              "TTS_TIMEOUT_SECONDS": 30
             }
             EOF
       - run:

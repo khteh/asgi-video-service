@@ -51,7 +51,17 @@ class SimulatedVideoProvider:
         on_progress: ProgressCallback,
     ) -> GenerationResult:
         settings = self.settings
-        job_dir = output_path.parent
+        # output_path is now a flat file directly under output/videos/
+        # (<job_id>.mp4), shared by every job in that directory - not a
+        # per-job directory itself - so this provider's own scratch/derived
+        # files (slides, audio, thumbnail) need their own per-job
+        # subdirectory to avoid concurrent jobs colliding on filenames.
+        # output_path.stem is the job id (see ArtifactStore.video_path), so
+        # output_path.parent / output_path.stem reconstructs exactly the
+        # per-job scratch directory ArtifactStore.job_dir()/thumbnail_path()
+        # expect to find things in, without needing that store passed in
+        # here too.
+        job_dir = output_path.parent / output_path.stem
         slides_dir = job_dir / "slides"
         audio_dir = job_dir / "audio"
         slides_dir.mkdir(parents=True, exist_ok=True)
@@ -92,7 +102,10 @@ class SimulatedVideoProvider:
 
             narration_text = fit_narration_to_budget(slide.narration, max_words_per_slide)
             audio_path = audio_dir / f"slide_{slide.index:02d}.mp3"
-            await tts.synthesize(narration_text, settings.tts_voice, audio_path)
+            await tts.synthesize(
+                narration_text, settings.tts_voice, audio_path,
+                timeout=settings.tts_timeout_seconds,
+            )
 
             clips.append(SlideClip(image_path=image_path, audio_path=audio_path))
 
@@ -105,6 +118,8 @@ class SimulatedVideoProvider:
             fps=settings.video_fps,
             max_seconds=settings.max_video_seconds,
             nvenc_mode=settings.nvenc_mode,
+            ffmpeg_timeout_seconds=settings.ffmpeg_timeout_seconds,
+            ffprobe_timeout_seconds=settings.ffprobe_timeout_seconds,
         )
 
         await on_progress("finalizing", 0.95)

@@ -151,6 +151,14 @@ class Job:
     error_message: Optional[str] = None
     error_code: Optional[str] = None
     result: Optional[GenerationResult] = None
+    # Incremented once per real processing attempt (see JobWorker._process),
+    # including the job's very first, ordinary attempt - not just retries.
+    # Used only by JobWorker.recover_orphaned_jobs on startup, to tell a job
+    # that's merely waiting for its first attempt apart from one that has
+    # already been tried settings.max_job_attempts times by processes that
+    # each died before finishing it - the latter is given up on (marked
+    # FAILED) instead of being re-enqueued forever.
+    attempt_count: int = 0
 
     def touch(self) -> None:
         self.updated_at = utc_now_iso()
@@ -191,6 +199,7 @@ class Job:
             "error_message": self.error_message,
             "error_code": self.error_code,
             "result": self.result.to_dict() if self.result else None,
+            "attempt_count": self.attempt_count,
         }
 
     @classmethod
@@ -208,4 +217,8 @@ class Job:
             error_message=d.get("error_message"),
             error_code=d.get("error_code"),
             result=GenerationResult.from_dict(d["result"]) if d.get("result") else None,
+            # .get(..., 0): status files written before this field existed
+            # don't have it - treat them as zero prior attempts rather than
+            # failing to load.
+            attempt_count=d.get("attempt_count", 0),
         )

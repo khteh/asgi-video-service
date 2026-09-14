@@ -157,6 +157,7 @@ def create_app(settings: Settings | None = None) -> Quart:
         artifact_store=artifact_store,
         providers=providers,
         concurrency=settings.worker_concurrency,
+        max_attempts=settings.max_job_attempts,
     )
 
     app.extensions["settings"] = settings
@@ -171,6 +172,10 @@ def create_app(settings: Settings | None = None) -> Quart:
 
     @app.before_serving
     async def _start_worker() -> None:
+        # Must run before worker.start(): re-enqueues (or gives up on) any
+        # job left PENDING/GENERATING by a previous process that exited
+        # before finishing it - see JobWorker.recover_orphaned_jobs.
+        await worker.recover_orphaned_jobs()
         worker.start()
 
     @app.after_serving
@@ -181,6 +186,26 @@ def create_app(settings: Settings | None = None) -> Quart:
 
 
 # Module-level instance for ASGI servers that import a dotted path
-# (`anycorn src.app:app`).
-logging.info(f"Running app...")
+# (`anycorn src.main:app`).
+#
+# create_app() must run BEFORE any logging.* call in this module (or
+# anything it imports at module scope) - it's what makes Settings.from_env()
+# run, which is the only place logging.basicConfig(filename=..., ...) gets
+# called to point the root logger at /var/log/asgi-video-service/log.
+# logging.basicConfig() is a documented no-op once the root logger already
+# has a handler, and the top-level convenience functions (logging.info,
+# .warning, .error, etc.) silently call basicConfig() with NO arguments
+# (default: WARNING level, a StreamHandler to stderr - no file at all) the
+# moment they're used and the root logger doesn't have one yet. The
+# previous line order here - logging.info("Running app...") BEFORE
+# create_app() - did exactly that: it pre-empted the root logger with the
+# default stderr/WARNING handler, so every subsequent
+# logging.basicConfig(filename=...) call in Settings.from_env() became a
+# no-op for the rest of the process's life - config.py's file/rotating
+# handler setup never actually took effect, and this app's own INFO-level
+# logs (job lifecycle, worker start/stop, etc.) had nowhere to go: below
+# WARNING, they weren't even printed to stderr, and never reached the file
+# at all. Calling create_app() first lets Settings.from_env() claim the
+# root logger before anything else can.
 app = create_app()
+logging.info("Running app...")

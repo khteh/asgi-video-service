@@ -81,10 +81,75 @@ class Settings:
     query_min_length: int = 5
     query_max_length: int = 1024
 
+    # Orphan-job recovery (src/jobs/worker.py, JobWorker.recover_orphaned_jobs,
+    # called from create_app()'s before_serving hook): a job left PENDING or
+    # GENERATING by a process that exited - crash, restart, redeploy - before
+    # a worker finished it has no persisted queue entry (the hand-off queue
+    # is in-memory only), so on the next startup it's re-enqueued instead of
+    # sitting at its last-persisted status forever. Job.attempt_count tracks
+    # how many real attempts a job has had across all processes; once a job
+    # has used up max_job_attempts, recovery gives up and marks it FAILED
+    # instead of retrying again - this bounds a job that reliably crashes
+    # the process to a few failed tries rather than an infinite restart loop.
+    max_job_attempts: int = 3
+
+    # Hard ceiling, in seconds, on any single ffmpeg subprocess call in
+    # video_builder.py (a per-slide encode, or the final concat). Without
+    # this, a wedged ffmpeg process (stalled encoder, hung I/O) blocks its
+    # worker slot forever instead of failing just the one job it's
+    # processing - with enough wedged jobs, every worker slot fills up and
+    # every subsequent submission is stuck at "pending" even though the
+    # process itself never crashed or restarted.
+    ffmpeg_timeout_seconds: float = 120.0
+
+    # Hard ceiling, in seconds, on the ffprobe call video_builder.py uses to
+    # measure narration-audio/output-video duration (probe_duration) - same
+    # "wedged subprocess blocks a worker slot forever" risk as
+    # ffmpeg_timeout_seconds above, just for ffprobe instead of ffmpeg.
+    ffprobe_timeout_seconds: float = 30.0
+
+    # Hard ceiling, in seconds, on a single edge-tts narration-synthesis call
+    # (tts.py) - without this, a connection to the edge-tts speech endpoint
+    # that's accepted but never completes blocks its worker slot forever
+    # instead of failing just the one job it's processing.
+    tts_timeout_seconds: float = 30.0
+
     @classmethod
     def from_env(cls) -> "Settings":
         with open('/etc/asgi-video-service_config.json', 'r') as f:
             config = json.load(f)
+
+        # This used to sit *after* the return cls(...) below, indented at
+        # class-body level instead of inside this method. That meant it ran
+        # exactly once, at module-import time, using the bare class
+        # attribute defaults (environment/LOGLEVEL, always None) rather than
+        # this call's actual loaded config - so logging was never configured
+        # for the real environment/level, and any Settings instance built
+        # directly (e.g. Settings(output_dir=tmp_path / "output") in tests)
+        # never went through this at all. Moved inside from_env() so it runs
+        # per-call, using the values just loaded from the config file above.
+        environment = config["ENVIRONMENT"]
+        loglevel = config["LOGLEVEL"]
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        if environment == "development":
+            logging.basicConfig(
+                filename='/var/log/asgi-video-service/log', filemode='w',
+                format='%(asctime)s %(levelname)-8s %(message)s',
+                level=loglevel, datefmt='%Y-%m-%d %H:%M:%S',
+            )
+        else:
+            logging.basicConfig(
+                handlers=[
+                    TimedRotatingFileHandler(
+                        filename='/var/log/asgi-video-service/log',
+                        when='d', interval=1, backupCount=3,
+                    ),
+                    logging.StreamHandler(sys.stdout),
+                ],
+                format='%(asctime)s %(levelname)-8s %(message)s',
+                level=loglevel, datefmt='%Y-%m-%d %H:%M:%S',
+            )
+
         return cls(
             environment = config["ENVIRONMENT"],
             LOGLEVEL = config['LOGLEVEL'],
@@ -111,24 +176,9 @@ class Settings:
             llm_validation_model = config["LLM_VALIDATION_MODEL"] if "LLM_VALIDATION_MODEL" in config else "claude-3-5-haiku-latest",
             worker_concurrency =_int(config, "WORKER_CONCURRENCY", 3),
             query_min_length =_int(config, "QUERY_MIN_LENGTH", 5),
-            query_max_length =_int(config, "QUERY_MAX_LENGTH", 1024)
+            query_max_length =_int(config, "QUERY_MAX_LENGTH", 1024),
+            max_job_attempts =_int(config, "MAX_JOB_ATTEMPTS", 3),
+            ffmpeg_timeout_seconds =_float(config, "FFMPEG_TIMEOUT_SECONDS", 120.0),
+            ffprobe_timeout_seconds =_float(config, "FFPROBE_TIMEOUT_SECONDS", 30.0),
+            tts_timeout_seconds =_float(config, "TTS_TIMEOUT_SECONDS", 30.0),
         )
-    """
-    https://docs.python.org/3/library/logging.html
-    The level parameter now accepts a string representation of the level such as ‘INFO’ as an alternative to the integer constants such as INFO.
-    """
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    """
-    https://realpython.com/python-modulo-string-formatting/#fine-tune-your-output-with-conversion-flags
-    -	Justification of values that are shorter than the specified field width
-    The Hyphen-Minus Flag (-)
-    When a formatted value is shorter than the specified field width, it’s usually right-justified in the field. The hyphen-minus (-) flag causes the value to be left-justified in the specified field instead.
-    """
-    if environment == "development":
-        logging.basicConfig(filename='/var/log/asgi-video-service/log', filemode='w', format='%(asctime)s %(levelname)-8s %(message)s', level=LOGLEVEL, datefmt='%Y-%m-%d %H:%M:%S')
-    else:
-        logging.basicConfig(handlers=[
-            TimedRotatingFileHandler(filename='/var/log/asgi-video-service/log', when='d', interval=1, backupCount=3),
-            logging.StreamHandler(sys.stdout)
-        ], format='%(asctime)s %(levelname)-8s %(message)s', level=LOGLEVEL, datefmt='%Y-%m-%d %H:%M:%S')
-    
