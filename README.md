@@ -184,7 +184,14 @@ A `{job}` looks like:
 
 ## Configuration
 
-See `.env.example` for the full list with defaults. The highlights:
+All API keys are set in `.env` locally or through secrets when deployed in k8s.
+
+- `AI_VIDEO_API_KEY` / `AI_VIDEO_BASE_URL` - point the `ai` provider at a
+  real text-to-video service (see "Adding a real AI provider" below).
+- `LLM_VALIDATION_API_KEY` (or `ANTHROPIC_API_KEY`) - optional; enables the
+  LLM-based query validator refinement instead of the rule-based-only check.
+
+See `asgi-video-service_config.json.example` for the full list with defaults. The highlights:
 
 - `GENERATION_PROVIDER` - default provider when a request doesn't specify one.
 - `MAX_VIDEO_SECONDS` / `VIDEO_WIDTH` / `VIDEO_HEIGHT` / `VIDEO_FPS` - the
@@ -192,10 +199,6 @@ See `.env.example` for the full list with defaults. The highlights:
 - `NVENC_MODE=auto|on|off` - `auto` probes ffmpeg for a _usable_ NVENC
   encoder (not just one that's compiled in) and falls back to libx264.
 - `TTS_VOICE` - any edge-tts neural voice (`uv run edge-tts --list-voices`).
-- `AI_VIDEO_API_KEY` / `AI_VIDEO_BASE_URL` - point the `ai` provider at a
-  real text-to-video service (see "Adding a real AI provider" below).
-- `LLM_VALIDATION_API_KEY` (or `ANTHROPIC_API_KEY`) - optional; enables the
-  LLM-based query validator refinement instead of the rule-based-only check.
 
 ## How a video gets made (simulated provider)
 

@@ -9,3 +9,4 @@ output/videos
 uv.lock.tmp
 .DS_Store
 .env
+!.env.example
