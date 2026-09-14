@@ -34,7 +34,10 @@ __all__ = [
 
 
 def build_validator(settings: Settings) -> QueryValidator:
-    rule_based = RuleBasedValidator()
+    rule_based = RuleBasedValidator(
+        min_length=settings.query_min_length,
+        max_length=settings.query_max_length,
+    )
     llm: LLMQueryValidator | None = None
     if settings.llm_validation_api_key:
         llm = LLMQueryValidator(

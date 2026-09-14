@@ -15,14 +15,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def _int(name: str, default: int) -> int:
-    val = os.environ.get(name)
-    return int(val) if val not in (None, "") else default
+def _int(settings: dict, name: str, default: int) -> int:
+    try:
+        return int(settings[name]) if name in settings else int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
 
-
-def _float(name: str, default: float) -> float:
-    val = os.environ.get(name)
-    return float(val) if val not in (None, "") else default
+def _float(settings: dict, name: str, default: float) -> float:
+    try:
+        return float(settings[name]) if name in settings else float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
 
 class ConfigSingleton(type): # Inherit from "type" in order to gain access to method __call__
     __registry = {}
@@ -72,44 +75,43 @@ class Settings:
 
     worker_concurrency: int = 3
 
+    # Structural bounds on the raw query string (src/validation/rule_based.py)
+    # - enforced inclusively: a query of exactly query_min_length or exactly
+    # query_max_length characters is accepted.
+    query_min_length: int = 5
+    query_max_length: int = 1024
+
     @classmethod
     def from_env(cls) -> "Settings":
         with open('/etc/asgi-video-service_config.json', 'r') as f:
             config = json.load(f)
         return cls(
-            environment=config["ENVIRONMENT"],
-            LOGLEVEL=config['LOGLEVEL'],
-            SECRET_KEY=config["SECRET_KEY"] or "you-will-never-guess",
-            JWT_SECRET_KEY=config["JWT_SECRET_KEY"] if "JWT_SECRET_KEY" in config and len(config["JWT_SECRET_KEY"]) >= 64 else secrets.token_hex(64),
-
-            output_dir=Path(os.environ.get("OUTPUT_DIR", "output")),
-            default_generation_provider=os.environ.get(
-                "GENERATION_PROVIDER", "simulated"
-            ),
-            max_video_seconds=_float("MAX_VIDEO_SECONDS", 90.0),
-            video_width=_int("VIDEO_WIDTH", 3840),
-            video_height=_int("VIDEO_HEIGHT", 2160),
-            video_fps=_int("VIDEO_FPS", 60),
-            nvenc_mode=os.environ.get("NVENC_MODE", "auto"),
-            tts_voice=os.environ.get("TTS_VOICE", "en-US-AriaNeural"),
-            ai_video_api_key=os.environ.get("AI_VIDEO_API_KEY") or None,
-            ai_video_base_url=os.environ.get(
-                "AI_VIDEO_BASE_URL", "https://api.example-ai-video-provider.com/v1"
-            ),
-            ai_video_preflight_path=os.environ.get("AI_VIDEO_PREFLIGHT_PATH", "/health"),
-            ai_video_timeout_seconds=_float("AI_VIDEO_TIMEOUT_SECONDS", 10.0),
+            environment = config["ENVIRONMENT"],
+            LOGLEVEL = config['LOGLEVEL'],
+            SECRET_KEY = config["SECRET_KEY"] or "you-will-never-guess",
+            JWT_SECRET_KEY = config["JWT_SECRET_KEY"] if "JWT_SECRET_KEY" in config and len(config["JWT_SECRET_KEY"]) >= 64 else secrets.token_hex(64),
+            output_dir = Path(config["OUTPUT_DIR"] or "output"),
+            default_generation_provider = config["GENERATION_PROVIDER"] or "simulated",
+            max_video_seconds =_float(config, "MAX_VIDEO_SECONDS", 90.0),
+            video_width = _int(config, "VIDEO_WIDTH", 3840),
+            video_height = _int(config, "VIDEO_HEIGHT", 2160),
+            video_fps = _int(config, "VIDEO_FPS", 60),
+            nvenc_mode = config["NVENC_MODE"],
+            tts_voice = config["TTS_VOICE"],
+            ai_video_api_key = os.environ.get("AI_VIDEO_API_KEY") or None,
+            ai_video_base_url = config["AI_VIDEO_BASE_URL"] if "AI_VIDEO_BASE_URL" in config else None,
+            ai_video_preflight_path = config["AI_VIDEO_PREFLIGHT_PATH"] if "AI_VIDEO_PREFLIGHT_PATH" in config else None,
+            ai_video_timeout_seconds = _float(config, "AI_VIDEO_TIMEOUT_SECONDS", 10.0),
             llm_validation_api_key=(
                 os.environ.get("LLM_VALIDATION_API_KEY")
                 or os.environ.get("ANTHROPIC_API_KEY")
                 or None
             ),
-            llm_validation_base_url=os.environ.get(
-                "LLM_VALIDATION_BASE_URL", "https://api.anthropic.com/v1/messages"
-            ),
-            llm_validation_model=os.environ.get(
-                "LLM_VALIDATION_MODEL", "claude-3-5-haiku-latest"
-            ),
-            worker_concurrency=_int("WORKER_CONCURRENCY", 3),
+            llm_validation_base_url = config["LLM_VALIDATION_BASE_URL"] if "LLM_VALIDATION_BASE_URL" in config else "https://api.anthropic.com/v1/messages",
+            llm_validation_model = config["LLM_VALIDATION_MODEL"] if "LLM_VALIDATION_MODEL" in config else "claude-3-5-haiku-latest",
+            worker_concurrency =_int(config, "WORKER_CONCURRENCY", 3),
+            query_min_length =_int(config, "QUERY_MIN_LENGTH", 5),
+            query_max_length =_int(config, "QUERY_MAX_LENGTH", 1024)
         )
     """
     https://docs.python.org/3/library/logging.html

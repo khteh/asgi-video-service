@@ -15,8 +15,8 @@ from src.domain.errors import InvalidQueryError, NotStemRelevantError
 
 _WORD_RE = re.compile(r"[A-Za-z]+(?:'[A-Za-z]+)?")
 
-MIN_LENGTH = 4
-MAX_LENGTH = 300
+MIN_LENGTH = 5
+MAX_LENGTH = 1024
 MIN_REAL_WORD_RATIO = 0.55
 # zipf_frequency returns ~0 for strings that aren't recognizable English
 # words at all; short common words score high (>4), rare-but-real words
@@ -100,8 +100,21 @@ def _tokens(query: str) -> list[str]:
 class RuleBasedValidator:
     """Deterministic structural + keyword-heuristic query validator."""
 
-    def __init__(self, keywords: set[str] | None = None):
+    def __init__(
+        self,
+        keywords: set[str] | None = None,
+        *,
+        min_length: int = MIN_LENGTH,
+        max_length: int = MAX_LENGTH,
+    ):
         self.keywords = keywords or STEM_KEYWORDS
+        # Configurable per instance (see Settings.query_min_length/
+        # query_max_length in src/config.py, wired up in
+        # src/validation/__init__.py's build_validator()) - the module-level
+        # MIN_LENGTH/MAX_LENGTH above remain as the defaults so constructing
+        # a RuleBasedValidator() directly (e.g. in tests) still works.
+        self.min_length = min_length
+        self.max_length = max_length
 
     def structural_check(self, raw_query: str) -> str:
         """Raise InvalidQueryError for structurally unusable input, else
@@ -111,13 +124,13 @@ class RuleBasedValidator:
         query = (raw_query or "").strip()
         if not query:
             raise InvalidQueryError("Query is empty or whitespace only.")
-        if len(query) < MIN_LENGTH:
+        if len(query) < self.min_length:
             raise InvalidQueryError(
-                f"Query is too short (minimum {MIN_LENGTH} characters)."
+                f"Query is too short (minimum {self.min_length} characters)."
             )
-        if len(query) > MAX_LENGTH:
+        if len(query) > self.max_length:
             raise InvalidQueryError(
-                f"Query is too long (maximum {MAX_LENGTH} characters)."
+                f"Query is too long (maximum {self.max_length} characters)."
             )
         words = _WORD_RE.findall(query)
         if not words:

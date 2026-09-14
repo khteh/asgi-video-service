@@ -2,11 +2,10 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-output/jobs/*.json
-output/videos/*.mp4
+output/jobs
+output/videos
 !output/jobs/.gitkeep
 !output/videos/.gitkeep
 uv.lock.tmp
 .DS_Store
 .env
-!.env.example
