@@ -1,12 +1,17 @@
 # STEM Explainer Video Service (ASGI)
 
-An ASGI service that turns a learner's STEM question into a
+An ASGI HTTP/3 service that turns a learner's STEM question into a
 short, narrated explainer video. Built so the _generation backend_ is a
 plug-and-play boundary: a fully self-contained **simulated** provider ships
 by default (no API key, real slides + real narrated audio + real MP4), and
 a **real AI** provider is a clean adapter interface away.
 
 This project is generated using Claude desktop in multiple rounds of prompts.
+
+## Framework
+
+- Quart web microframework
+- Anycorn is an ASGI web server
 
 ## Prompts
 
