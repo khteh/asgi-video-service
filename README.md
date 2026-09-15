@@ -6,12 +6,12 @@ plug-and-play boundary: a fully self-contained **simulated** provider ships
 by default (no API key, real slides + real narrated audio + real MP4), and
 a **real AI** provider is a clean adapter interface away.
 
-This project is generated using Claude desktop in multiple rounds of prompts.
-
 ## Framework
 
 - Quart web microframework
 - Anycorn is an ASGI web server
+
+This project is generated using Claude desktop in multiple rounds of prompts.
 
 ## Prompts
 
