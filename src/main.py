@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 from src.api.routes import api_bp
 from src.domain.models import GenerationProviderName
 from src.generation.registry import ProviderRegistry
+from src.health import DependencyHealth, health_bp
 from src.jobs.service import JobService
 from src.jobs.worker import JobWorker
 from src.persistence.artifact_store import ArtifactStore
@@ -167,6 +168,10 @@ def create_app(settings: Settings | None = None) -> Quart:
         concurrency=settings.worker_concurrency,
         max_attempts=settings.max_job_attempts,
     )
+    # Shares the same `providers` registry job_service/worker use above -
+    # readiness checks the configured mode's *actual* provider instance
+    # (see DependencyHealth), not a separate copy.
+    health = DependencyHealth(settings, providers)
 
     app.extensions["settings"] = settings
     app.extensions["job_store"] = job_store
@@ -174,9 +179,11 @@ def create_app(settings: Settings | None = None) -> Quart:
     app.extensions["providers"] = providers
     app.extensions["job_service"] = job_service
     app.extensions["worker"] = worker
+    app.extensions["health"] = health
 
     app.register_blueprint(api_bp)
     app.register_blueprint(web_bp)
+    app.register_blueprint(health_bp)
 
     @app.before_serving
     async def _start_worker() -> None:

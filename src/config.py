@@ -114,6 +114,17 @@ class Settings:
     # instead of failing just the one job it's processing.
     tts_timeout_seconds: float = 30.0
 
+    # How long src/health/checks.py's DependencyHealth caches the result of
+    # a downstream-dependency check that makes a real network call (the
+    # configured provider's preflight(), and - only in "simulated" mode -
+    # an edge-tts reachability check) before re-running it. The /health/
+    # ready probe is polled continuously by Kubernetes (typically every
+    # ~10-15s); without a cache, every single tick would re-hit the AI
+    # provider's health endpoint or Microsoft's edge-tts endpoint, which is
+    # noisy at best. /health/ready?fresh=true (used once by startupProbe)
+    # bypasses this cache entirely - see DependencyHealth.readiness().
+    health_check_cache_seconds: float = 30.0
+
     @classmethod
     def from_env(cls) -> "Settings":
         with open('/etc/asgi-video-service_config.json', 'r') as f:
@@ -181,4 +192,5 @@ class Settings:
             ffmpeg_timeout_seconds =_float(config, "FFMPEG_TIMEOUT_SECONDS", 120.0),
             ffprobe_timeout_seconds =_float(config, "FFPROBE_TIMEOUT_SECONDS", 30.0),
             tts_timeout_seconds =_float(config, "TTS_TIMEOUT_SECONDS", 30.0),
+            health_check_cache_seconds =_float(config, "HEALTH_CHECK_CACHE_SECONDS", 30.0),
         )

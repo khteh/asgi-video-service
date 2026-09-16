@@ -14,7 +14,7 @@ import shutil
 from pathlib import Path
 
 from src.config import Settings
-from src.domain.errors import GenerationFailedError
+from src.domain.errors import GenerationFailedError, ProviderUnavailableError
 from src.domain.models import DifficultyLevel, GenerationResult
 
 from ..base import ProgressCallback
@@ -38,8 +38,27 @@ class SimulatedVideoProvider:
         self.settings = settings
 
     async def preflight(self) -> None:
-        # Fully offline/keyless by design - nothing to check.
-        return None
+        """No API key required, but this provider does shell out to
+        ffmpeg/ffprobe as plain subprocess commands (see video_builder.py)
+        - checking they're on PATH here is cheap and purely local (no
+        network), and turns "job fails deep inside generate(), after
+        burning one of its limited retry attempts" into the same
+        immediate, no-job-created failure the "ai" provider already gives
+        for its own missing dependency (see GenericAIVideoProvider.
+        preflight). Deliberately does NOT check edge-tts network
+        reachability here - that's a real network round trip, and doing
+        it before every single job submission would add real latency to
+        every "simulated" job creation; see check_edge_tts_reachable in
+        src/health/checks.py, which validates that on the k8s readiness
+        probe's own (cached) cadence instead.
+        """
+        missing = [binary for binary in ("ffmpeg", "ffprobe") if shutil.which(binary) is None]
+        if missing:
+            raise ProviderUnavailableError(
+                "Simulated video generation is not available: missing "
+                f"required binaries on PATH: {', '.join(missing)}.",
+                code="missing_binary",
+            )
 
     async def generate(
         self,

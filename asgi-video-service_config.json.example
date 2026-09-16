@@ -20,7 +20,8 @@
         "MAX_JOB_ATTEMPTS": 3,
         "FFMPEG_TIMEOUT_SECONDS": 120.0,
         "FFPROBE_TIMEOUT_SECONDS": 30,
-        "TTS_TIMEOUT_SECONDS": 30
+        "TTS_TIMEOUT_SECONDS": 30,
+        "HEALTH_CHECK_CACHE_SECONDS": 30
 }
 # --- Generation ---
 # "simulated" (offline, free, default) or "ai" (real provider, needs
@@ -43,3 +44,9 @@
 # judge whether a query makes sense and is a STEM topic. Falls back to the
 # rule-based check automatically if unset, unreachable, or it errors.
 # Defaults to ANTHROPIC_API_KEY if LLM_VALIDATION_API_KEY isn't set.
+
+# --- Kubernetes health probes (GET /health/ready) ---
+# How long a downstream check that makes a real network call (provider
+# preflight, and - "simulated" mode only - edge-tts reachability) is
+# cached before being re-run. ?fresh=true bypasses this. See "Kubernetes
+# health probes" in README.md.

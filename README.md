@@ -204,6 +204,57 @@ A `{job}` looks like:
 `duration_seconds`, `slide_count`, `width`, `height`, `fps`, `provider`,
 `narration_voice`, and `hardware_acceleration` (`"nvenc"` or `"cpu"`).
 
+## Kubernetes health probes
+
+Two endpoints, deliberately outside the `/api` prefix and not part of the
+JSON API contract above - they exist for the kubelet's `startupProbe`/
+`readinessProbe`/`livenessProbe`, wired up in `k8s/statefulset.yaml`:
+
+```
+GET /health/live             -> 200 {"status": "ok"}  |  503 (worker tasks not running)
+GET /health/ready             -> 200 {"status": "ok", "mode", "checks": [...]}  |  503
+GET /health/ready?fresh=true  -> same, bypassing the cache described below
+```
+
+**`/health/live` (liveness)** deliberately does **not** check any
+downstream dependency - it only confirms `JobWorker`'s background tasks
+are still running (`JobWorker.is_running()`). Kubernetes responds to a
+failed liveness probe by killing and restarting the pod; restarting can't
+fix an edge-tts or AI-vendor outage, so wiring a downstream check into
+liveness would turn a transient external blip into a self-inflicted
+restart storm across every replica - a well-known Kubernetes anti-pattern.
+What a restart *can* fix is this process's own worker tasks having died,
+so that's the one thing liveness checks.
+
+**`/health/ready` (readiness)** validates the downstream dependencies the
+*currently configured* generation mode (`GENERATION_PROVIDER` - see
+`src/health/checks.py`) actually needs, so a `simulated`-mode deployment
+never fails readiness over a missing `AI_VIDEO_API_KEY` it was never going
+to use, and an `ai`-mode deployment doesn't waste time checking for
+ffmpeg/ffprobe it doesn't need:
+
+- always: `output_dir` is writable (every job, either mode, persists its
+  status JSON there).
+- `simulated`: the `simulated` provider's own `preflight()` (ffmpeg/
+  ffprobe on `PATH`) plus a lightweight edge-tts reachability check
+  (`edge_tts.list_voices()` - one small HTTPS GET, no audio synthesis).
+- `ai`: the `ai` provider's own `preflight()` (`AI_VIDEO_API_KEY` set, and
+  the configured vendor endpoint reachable).
+
+The two checks that make a real network call are cached for
+`HEALTH_CHECK_CACHE_SECONDS` (default 30s) so a readiness probe polled
+every ~10-15s in steady state doesn't hammer edge-tts or the AI vendor's
+health endpoint on every single tick. `?fresh=true` bypasses that cache -
+`startupProbe` is configured to request it, since it only ever runs once
+while the pod is coming up and should reflect a real, uncached check.
+
+`k8s/statefulset.yaml` points every probe at the plaintext `insecure_bind`
+port (`8080` per `anycorn.toml`), not the HTTPS/QUIC port (`4433`) -
+deliberately: the kubelet's own HTTP/1.1 probe client doesn't speak QUIC,
+and routing probes through anycorn's HTTP/3 stack would tie pod health to
+the still-open `davidbrochart/anycorn#89` bug rather than to this app's
+actual readiness.
+
 ## Configuration
 
 All API keys are set in `.env` locally or through secrets when deployed in k8s.
@@ -283,6 +334,7 @@ default and can be left out entirely.
 | `FFMPEG_TIMEOUT_SECONDS`  | float | `120.0` | Ceiling on any single ffmpeg subprocess call (`video_builder.py`) - a per-slide encode or the final concat. A wedged process is killed and the job fails, instead of its worker slot hanging forever.                                                                                                                        |
 | `FFPROBE_TIMEOUT_SECONDS` | float | `30.0`  | Same idea, for the `ffprobe` calls that measure narration/video duration.                                                                                                                                                                                                                                                    |
 | `TTS_TIMEOUT_SECONDS`     | float | `30.0`  | Ceiling on a single edge-tts narration-synthesis call (`tts.py`).                                                                                                                                                                                                                                                            |
+| `HEALTH_CHECK_CACHE_SECONDS` | float | `30.0` | How long `GET /health/ready` caches the result of a downstream check that makes a real network call (provider `preflight()`, and - `simulated` mode only - the edge-tts reachability check) before re-running it. `?fresh=true` bypasses this cache entirely. See "Kubernetes health probes" above.                    |
 
 `DEBUG`, `TESTING`, and other standard Quart/Flask config keys can also be
 set in the same JSON file - `create_app()` loads the whole file into

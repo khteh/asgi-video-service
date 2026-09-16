@@ -100,6 +100,14 @@ class JobWorker:
                 pass
         self._tasks.clear()
 
+    def is_running(self) -> bool:
+        """True if start() has been called and every worker task it
+        created is still alive. Used by the /health/live liveness probe
+        (src/health/routes.py) - see that module for why liveness checks
+        this instead of any downstream dependency.
+        """
+        return bool(self._tasks) and all(not t.done() for t in self._tasks)
+
     async def _run(self, worker_index: int) -> None:
         while True:
             job_id = await self.queue.get()
