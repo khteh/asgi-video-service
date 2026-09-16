@@ -114,3 +114,25 @@ async def test_artifact_404_before_job_completes(app):
     assert artifact_resp.status_code == 404
     error_body = await artifact_resp.get_json()
     assert error_body["error"]["code"] == "artifact_not_found"
+
+
+@pytest.mark.asyncio
+async def test_delete_unknown_job_returns_404(app):
+    client = app.test_client()
+    resp = await client.delete("/api/jobs/does-not-exist")
+    assert resp.status_code == 404
+    body = await resp.get_json()
+    assert body["error"]["code"] == "job_not_found"
+
+
+@pytest.mark.asyncio
+async def test_delete_pending_job_returns_409(app):
+    client = app.test_client()
+    resp = await client.post("/api/jobs", json={"query": "How does the pH scale work?"})
+    body = await resp.get_json()
+    job_id = body["id"]
+
+    delete_resp = await client.delete(f"/api/jobs/{job_id}")
+    assert delete_resp.status_code == 409
+    error_body = await delete_resp.get_json()
+    assert error_body["error"]["code"] == "job_not_deletable"

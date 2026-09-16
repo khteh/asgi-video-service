@@ -4,6 +4,10 @@
 <section>
   <h1>Requested videos</h1>
 
+  {% if error_message %}
+  <div class="alert alert-error">{{ error_message }}</div>
+  {% endif %}
+
   {% if not jobs %}
   <p class="empty-state">
     No videos requested yet. <a href="{{ url_for('web.index') }}">Ask a question</a> to get started.
@@ -16,6 +20,7 @@
         <th>Status</th>
         <th>Difficulty</th>
         <th>Requested</th>
+        <th></th>
         <th></th>
       </tr>
     </thead>
@@ -30,6 +35,15 @@
           <a href="{{ url_for('web.job_detail', job_id=job.id) }}">
             {{ "▶ Play" if job.status.value == "completed" else "View" }}
           </a>
+        </td>
+        <td>
+          {% if job.status.value in ("completed", "failed") %}
+          <form method="post" action="{{ url_for('web.delete_job', job_id=job.id) }}"
+                onsubmit="return confirm('Delete this video and all its files? This cannot be undone.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn-delete">Delete</button>
+          </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}

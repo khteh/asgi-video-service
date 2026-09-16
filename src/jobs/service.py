@@ -13,13 +13,16 @@ import asyncio
 import logging
 from typing import Optional
 
+from src.domain.errors import JobNotDeletableError
 from src.domain.models import (
     DifficultyLevel,
     GenerationProviderName,
     Job,
+    JobStatus,
     new_job_id,
 )
 from src.generation.registry import ProviderRegistry
+from src.persistence.artifact_store import ArtifactStore
 from src.persistence.job_store import JobRepository
 from src.validation.base import QueryValidator
 
@@ -33,12 +36,14 @@ class JobService:
         validator: QueryValidator,
         providers: ProviderRegistry,
         job_store: JobRepository,
+        artifact_store: ArtifactStore,
         queue: "asyncio.Queue[str]",
         default_provider: GenerationProviderName = GenerationProviderName.SIMULATED,
     ) -> None:
         self.validator = validator
         self.providers = providers
         self.job_store = job_store
+        self.artifact_store = artifact_store
         self.queue = queue
         self.default_provider = default_provider
 
@@ -90,3 +95,23 @@ class JobService:
 
     async def list_jobs(self) -> list[Job]:
         return await self.job_store.list_all()
+
+    async def delete_job(self, job_id: str) -> None:
+        """Deletes a job's status file and any artifacts it produced.
+
+        Raises JobNotFoundError (via job_store.get) if the job doesn't
+        exist, or JobNotDeletableError if it's still PENDING/GENERATING -
+        the worker may be actively reading/writing that job's status and
+        artifact files, and deleting them out from under it would race with
+        that. Only a terminal-state job (COMPLETED or FAILED) is safe to
+        delete.
+        """
+        job = await self.job_store.get(job_id)
+        if job.status in (JobStatus.PENDING, JobStatus.GENERATING):
+            raise JobNotDeletableError(
+                f"Job '{job_id}' is still {job.status.value} and can't be "
+                "deleted yet - wait for it to finish."
+            )
+        await self.artifact_store.delete_artifacts(job_id)
+        await self.job_store.delete(job_id)
+        logger.info("Job %s deleted", job_id)

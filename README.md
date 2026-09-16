@@ -142,7 +142,12 @@ Then open http://localhost:8000.
 
 ### Successful Video Generation
 
-![Successful Generation](images/asgi-video-service-generated.png?raw=true "Successful Generation")
+- What is the difference between ionic and covalent bonding?
+  ![Successful Generation](images/asgi-video-service-generated.png?raw=true "Successful Generation")
+- What's the difference between nuclear fusion and fission?
+  ![Successful Generation1](images/asgi-video-service-generated1.png?raw=true "Successful Generation1")
+- What is quantum computing?
+  ![Successful Generation2](images/asgi-video-service-generated2.png?raw=true "Successful Generation2")
 
 ### List of Generated Videos
 
@@ -223,11 +228,11 @@ failed liveness probe by killing and restarting the pod; restarting can't
 fix an edge-tts or AI-vendor outage, so wiring a downstream check into
 liveness would turn a transient external blip into a self-inflicted
 restart storm across every replica - a well-known Kubernetes anti-pattern.
-What a restart *can* fix is this process's own worker tasks having died,
+What a restart _can_ fix is this process's own worker tasks having died,
 so that's the one thing liveness checks.
 
 **`/health/ready` (readiness)** validates the downstream dependencies the
-*currently configured* generation mode (`GENERATION_PROVIDER` - see
+_currently configured_ generation mode (`GENERATION_PROVIDER` - see
 `src/health/checks.py`) actually needs, so a `simulated`-mode deployment
 never fails readiness over a missing `AI_VIDEO_API_KEY` it was never going
 to use, and an `ai`-mode deployment doesn't waste time checking for
@@ -327,14 +332,14 @@ default and can be left out entirely.
 
 #### Worker, retries and timeouts
 
-| Key                       | Type  | Default | Notes                                                                                                                                                                                                                                                                                                                        |
-| ------------------------- | ----- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WORKER_CONCURRENCY`      | int   | `3`     | Number of concurrent job-worker tasks (`JobWorker`).                                                                                                                                                                                                                                                                         |
-| `MAX_JOB_ATTEMPTS`        | int   | `3`     | On startup, a job left `pending`/`generating` by a process that exited (crash/restart) is re-enqueued - up to this many total attempts (`Job.attempt_count`, persisted across restarts). Beyond that, `JobWorker.recover_orphaned_jobs` gives up and marks it `failed` (`max_retries_exceeded`) instead of retrying forever. |
-| `FFMPEG_TIMEOUT_SECONDS`  | float | `120.0` | Ceiling on any single ffmpeg subprocess call (`video_builder.py`) - a per-slide encode or the final concat. A wedged process is killed and the job fails, instead of its worker slot hanging forever.                                                                                                                        |
-| `FFPROBE_TIMEOUT_SECONDS` | float | `30.0`  | Same idea, for the `ffprobe` calls that measure narration/video duration.                                                                                                                                                                                                                                                    |
-| `TTS_TIMEOUT_SECONDS`     | float | `30.0`  | Ceiling on a single edge-tts narration-synthesis call (`tts.py`).                                                                                                                                                                                                                                                            |
-| `HEALTH_CHECK_CACHE_SECONDS` | float | `30.0` | How long `GET /health/ready` caches the result of a downstream check that makes a real network call (provider `preflight()`, and - `simulated` mode only - the edge-tts reachability check) before re-running it. `?fresh=true` bypasses this cache entirely. See "Kubernetes health probes" above.                    |
+| Key                          | Type  | Default | Notes                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------- | ----- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WORKER_CONCURRENCY`         | int   | `3`     | Number of concurrent job-worker tasks (`JobWorker`).                                                                                                                                                                                                                                                                         |
+| `MAX_JOB_ATTEMPTS`           | int   | `3`     | On startup, a job left `pending`/`generating` by a process that exited (crash/restart) is re-enqueued - up to this many total attempts (`Job.attempt_count`, persisted across restarts). Beyond that, `JobWorker.recover_orphaned_jobs` gives up and marks it `failed` (`max_retries_exceeded`) instead of retrying forever. |
+| `FFMPEG_TIMEOUT_SECONDS`     | float | `120.0` | Ceiling on any single ffmpeg subprocess call (`video_builder.py`) - a per-slide encode or the final concat. A wedged process is killed and the job fails, instead of its worker slot hanging forever.                                                                                                                        |
+| `FFPROBE_TIMEOUT_SECONDS`    | float | `30.0`  | Same idea, for the `ffprobe` calls that measure narration/video duration.                                                                                                                                                                                                                                                    |
+| `TTS_TIMEOUT_SECONDS`        | float | `30.0`  | Ceiling on a single edge-tts narration-synthesis call (`tts.py`).                                                                                                                                                                                                                                                            |
+| `HEALTH_CHECK_CACHE_SECONDS` | float | `30.0`  | How long `GET /health/ready` caches the result of a downstream check that makes a real network call (provider `preflight()`, and - `simulated` mode only - the edge-tts reachability check) before re-running it. `?fresh=true` bypasses this cache entirely. See "Kubernetes health probes" above.                          |
 
 `DEBUG`, `TESTING`, and other standard Quart/Flask config keys can also be
 set in the same JSON file - `create_app()` loads the whole file into

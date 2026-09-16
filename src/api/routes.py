@@ -76,3 +76,13 @@ async def get_thumbnail(job_id: str):
     job = await job_service.get(job_id)
     thumbnail_path = artifact_store.resolve_thumbnail(job)
     return await send_file(thumbnail_path, mimetype="image/png")
+
+
+@api_bp.delete("/jobs/<job_id>")
+async def delete_job(job_id: str):
+    """Deletes a job's status file and any video/thumbnail/working files it
+    produced. 404 if the job doesn't exist, 409 if it's still
+    PENDING/GENERATING (see JobService.delete_job)."""
+    job_service = current_app.extensions["job_service"]
+    await job_service.delete_job(job_id)
+    return "", 204

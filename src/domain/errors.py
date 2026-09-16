@@ -59,6 +59,18 @@ class ArtifactNotFoundError(ServiceError):
     code = "artifact_not_found"
 
 
+class JobNotDeletableError(ServiceError):
+    """A job that's still PENDING or GENERATING can't be deleted - a
+    worker may currently be reading/writing its status and artifact files,
+    and deleting them out from under it would race with that. Only a job
+    in a terminal state (COMPLETED or FAILED, nothing left to protect) can
+    be deleted; see JobService.delete_job.
+    """
+
+    http_status = 409
+    code = "job_not_deletable"
+
+
 class GenerationFailedError(ServiceError):
     """Raised internally by a provider when generation fails mid-flight,
     after the job already exists. The job service catches this and marks

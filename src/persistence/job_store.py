@@ -28,6 +28,8 @@ class JobRepository(Protocol):
 
     async def list_all(self) -> list[Job]: ...
 
+    async def delete(self, job_id: str) -> None: ...
+
 
 class FileSystemJobStore:
     """Simple, dependency-free job persistence: one JSON file per job.
@@ -88,3 +90,13 @@ class FileSystemJobStore:
                 continue
         jobs.sort(key=lambda j: j.created_at, reverse=True)
         return jobs
+
+    async def delete(self, job_id: str) -> None:
+        async with self._lock:
+            await asyncio.to_thread(self._delete_sync, job_id)
+
+    def _delete_sync(self, job_id: str) -> None:
+        path = self._status_path(job_id)
+        if not path.exists():
+            raise JobNotFoundError(f"No job with id '{job_id}'.")
+        path.unlink()

@@ -69,3 +69,17 @@ async def job_detail(job_id: str):
         )
         return rendered, exc.http_status
     return await render_template("job_detail.html", job=job)
+
+
+@web_bp.post("/jobs/<job_id>/delete")
+async def delete_job(job_id: str):
+    job_service = current_app.extensions["job_service"]
+    try:
+        await job_service.delete_job(job_id)
+    except ServiceError as exc:
+        jobs = await job_service.list_jobs()
+        rendered = await render_template(
+            "jobs.html", jobs=jobs, error_message=exc.message
+        )
+        return rendered, exc.http_status
+    return redirect(url_for("web.jobs_list"))

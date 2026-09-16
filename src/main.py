@@ -157,6 +157,7 @@ def create_app(settings: Settings | None = None) -> Quart:
         validator=validator,
         providers=providers,
         job_store=job_store,
+        artifact_store=artifact_store,
         queue=queue,
         default_provider=GenerationProviderName.from_str(settings.default_generation_provider),
     )

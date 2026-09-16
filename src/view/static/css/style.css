@@ -138,6 +138,21 @@ textarea:focus, select:focus, input:focus {
 
 .btn-primary:hover { filter: brightness(1.08); }
 
+.btn-delete {
+  background: transparent;
+  color: var(--error);
+  border: 1px solid var(--error);
+  border-radius: 8px;
+  padding: 0.4rem 0.85rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.btn-delete:hover {
+  background: rgba(255, 125, 143, 0.12);
+}
+
 .examples { margin-top: 2rem; }
 .examples h2 { font-size: 1.1rem; color: var(--text-muted); }
 
