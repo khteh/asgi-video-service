@@ -36,11 +36,6 @@ jobs:
           method: full
       - setup_remote_docker:
           docker_layer_caching: true
-      #- run:
-      #    name: install dockerize
-      #    command: |
-      #      DOCKERIZE_VERSION="v0.9.3"
-      #      wget https://github.com/jwilder/dockerize/releases/download/$DOCKERIZE_VERSION/dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz && tar -C /usr/local/bin -xzvf dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz && rm dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz
       - restore_cache:
           key: v1-dependencies-{{ .Branch }}-{{ checksum "uv.lock" }}
       - run: uv sync --extra ai
@@ -97,11 +92,6 @@ jobs:
           name: Create required log directory
           command: |
             sudo mkdir -p /var/log/asgi-video-service /var/log/hypercorn
-      - run: uv run pytest -v
-      #- run:
-      #    name: Wait for PostgreSQL Server
-      #command: dockerize -wait tcp://localhost:5432 -timeout 1m
-      #    command: pg_isready -U "postgres" -h 127.0.0.1 -p 5432
       #- run:
       #    name: Prepare database for tests
       #    command: |
@@ -109,6 +99,7 @@ jobs:
       #      psql -h localhost -U postgres -c "CREATE DATABASE library WITH OWNER = $DB_USERNAME ;"
       #      psql -h localhost -U $DB_USERNAME -w -d library < library.sql
       #- run: uv run pytest -v Needs /etc/hypercorn.toml
+      - run: uv run pytest -v
       - run:
           name: Build docker image
           command: |
