@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "quart",
-    "anycorn[h3,asyncio]",
+    "anycorn[h3]",
     "edge-tts",
     "pillow",
     "httpx",
